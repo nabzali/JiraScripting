@@ -1,0 +1,82 @@
+import com.atlassian.jira.component.ComponentAccessor
+import com.atlassian.jira.issue.Issue
+import com.atlassian.jira.issue.IssueManager
+import com.atlassian.jira.user.util.UserManager
+import com.onresolve.scriptrunner.canned.jira.utils.ConditionUtils
+import com.onresolve.scriptrunner.canned.jira.workflow.postfunctions.CloneIssue
+import com.onresolve.scriptrunner.runner.ScriptRunnerImpl
+import org.apache.log4j.Logger
+import org.apache.log4j.Level
+
+import com.atlassian.jira.config.properties.APKeys
+import com.onresolve.scriptrunner.canned.jira.utils.AbstractCloneIssue
+import com.onresolve.scriptrunner.canned.jira.utils.CannedScriptUtils
+import groovy.xml.MarkupBuilder
+
+def log = Logger.getLogger(getClass())
+log.setLevel(Level.DEBUG)
+
+def projectManager = ComponentAccessor.getProjectManager()
+def pluginAccessor = ComponentAccessor.getPluginAccessor()
+def projectPropertiesManager = ComponentAccessor.getOSGiComponentInstanceOfType(pluginAccessor
+       .getClassLoader().findClass("com.tse.jira.projectproperties.plugin.api.ProjectPropertiesAOMgr"))
+
+// projectManager.getProjectObjects().each {project ->
+//     // log.warn("Processing project properties - "+ project.key)
+
+// 	//example to process for each project property
+// 	// projectPropertiesManager.getProjectPropertiesByProjectKey(project.key).each {property ->
+// 	// 	log.warn(property.getPropertyKey() +" >> "+ property.getPropertyValue())
+// 	// }
+
+// 	//example to process if project and property key exists
+// 	// def property = projectPropertiesManager.getProjectPropertyByKeys("TESTSUP", "bauProject")
+// 	// if(property != null) {
+// 	// 	log.warn("FOUND: "+ property.getPropertyKey() +" >> "+ property.getPropertyValue())
+// 	// }
+// }
+
+def bauProjectNew = ""
+projectPropertiesManager.getProjectPropertiesByProjectKey(issue.getProjectObject().getKey()).each {property ->
+	log.debug(property.getPropertyKey() +" >> "+ property.getPropertyValue())
+	if (property.getPropertyKey() == "bauProject") {
+		bauProjectNew = property.getPropertyValue()
+	}
+}
+
+log.debug("bau project value: " + bauProjectNew)
+
+def linkManager = ComponentAccessor.getIssueLinkManager()
+def userManager = ComponentAccessor.getUserManager()
+def issueManager = ComponentAccessor.getIssueManager()
+def customFieldManager = ComponentAccessor.getCustomFieldManager();
+def BAUProjectField = customFieldManager.getCustomFieldObjectByName("BAU Project")
+String targetProjectKey =  issue.getCustomFieldValue(BAUProjectField)
+log.debug("Value: " +targetProjectKey)
+
+def newAssignee = userManager.getUserByName("Nabeel.Ali")
+
+log.debug("new assignee name: " + newAssignee.getName())
+
+def cloneIssueBean = ScriptRunnerImpl.scriptRunner.createBean(CloneIssue)
+
+def executionContext = [
+    issue: issue,
+]
+
+def additionalCode = """
+issue.summary = '${issue.getSummary()}'
+
+"""//issue.assignee = '${newAssignee}'
+    
+def linkTypeRelatesTo = CannedScriptUtils.getAllLinkTypesWithInwards(true).find { it.value == "relates to" }.key.toString()
+
+// Use ConditionUtils.FIELD_ADDITIONAL_SCRIPT to access the "Additional Code" field when calling clone issue from a script
+def inputs = [
+    'FIELD_TARGET_PROJECT' : bauProjectNew,
+    'FIELD_LINK_TYPE' : linkTypeRelatesTo,
+    'FIELD_SELECTED_FIELDS': null, //clone all the fields
+    (ConditionUtils.FIELD_ADDITIONAL_SCRIPT): [additionalCode, ""]
+] as Map<String, Object>
+
+cloneIssueBean.execute(inputs, executionContext)
