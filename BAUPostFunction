@@ -18,10 +18,15 @@ import com.onresolve.scriptrunner.canned.jira.admin.CopyProject
 import com.atlassian.jira.issue.link.LinkCollectionImpl
 import com.atlassian.jira.issue.link.IssueLink
 
+import com.atlassian.jira.user.ApplicationUser
+
+import com.atlassian.jira.bc.issue.IssueService
+import com.atlassian.jira.event.type.EventDispatchOption
 
 def log = Logger.getLogger(getClass())
 log.setLevel(Level.DEBUG)
 
+def issueService = ComponentAccessor.getIssueService()
 def issueManager = ComponentAccessor.getIssueManager()
 def linkManager = ComponentAccessor.getIssueLinkManager()
 def userManager = ComponentAccessor.getUserManager()
@@ -33,15 +38,17 @@ def projectPropertiesManager = ComponentAccessor.getOSGiComponentInstanceOfType(
 
 //Read the target project and assignee from the current project's properties
 def targetProject = ""
-def newAssignee = ""
+ApplicationUser newAssignee
 projectPropertiesManager.getProjectPropertiesByProjectKey(issue.getProjectObject().getKey()).each {property ->
 	if (property.getPropertyKey() == "bauProject") {
 		targetProject = property.getPropertyValue()
 	}
-    // if (property.getPropertyKey() == "defaultAssignee") {
-    //     debug.log(property.getPropertyValue())
-    //     newAssignee = userManager.getUserbyName(property.getPropertyValue())
-    // }
+    if (property.getPropertyKey() == "defaultAssignee") {      
+        String val = property.getPropertyValue()
+        log.debug("assignee name: " + val)
+        newAssignee = userManager.getUserByName(val)
+        log.debug("new assignee: " + newAssignee)
+    }
 }
 
 
@@ -67,7 +74,7 @@ def inputs = [
     (ConditionUtils.FIELD_ADDITIONAL_SCRIPT): [additionalCode, ""]
 ] as Map<String, Object>
 
-def duplication = false 
+def cloneAlreadyExists = false 
 List<IssueLink> linkedIssues = linkManager.getOutwardLinks(issue.getId())
 linkedIssues.each{ linkedIssue -> 
     
@@ -76,16 +83,16 @@ linkedIssues.each{ linkedIssue ->
     def currentIssueProject = currentIssue.getProjectObject().getKey()
     log.debug(currentIssueProject)
     if (currentIssueProject == targetProject) {
-        duplication = true
+        cloneAlreadyExists = true
     }
 }
 
 def newIssueKey = ""
 
 // check for duplicate before cloning/linking
-if (duplication == true) {
+if (cloneAlreadyExists == true) {
     inputs = inputs.minus(['FIELD_LINK_TYPE' : linkTypeRelatesTo])
-    log.debug("Issue duplication")
+    log.debug("Clone already exists")
 }
 else {
     //clone the issue
@@ -98,6 +105,14 @@ else {
     log.debug(newIssueKey)
 
     //assign user to issue
-    //def newIssue = issueManager.getIssueObject(newIssueKey)
-    //newIssue.setAssignee(newAssignee)
+    def newIssue = issueManager.getIssueObject(newIssueKey)
+    log.debug(newIssue.getSummary())
+
+    
+
+    def user = ComponentAccessor.getJiraAuthenticationContext().getLoggedInUser()
+    log.debug(user.getName())
+    def assigneeUpdate = newIssue.setAssignee(newAssignee)
+    issueManager.updateIssue(user, newIssue, EventDispatchOption.ISSUE_UPDATED, false)
+
 }
