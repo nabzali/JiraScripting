@@ -38,15 +38,15 @@ projectPropertiesManager.getProjectPropertiesByProjectKey(issue.getProjectObject
 	if (property.getPropertyKey() == "bauProject") {
 		targetProject = property.getPropertyValue()
 	}
-    if (property.getPropertyKey() == "defaultAssignee") {
-        debug.log(property.getPropertyValue())
-        newAssignee = userManager.getUserbyName(property.getPropertyValue())
-    }
+    // if (property.getPropertyKey() == "defaultAssignee") {
+    //     debug.log(property.getPropertyValue())
+    //     newAssignee = userManager.getUserbyName(property.getPropertyValue())
+    // }
 }
 
 
 //def newAssignee = userManager.getUserByName("Nabeel.Ali")
-log.debug("new assignee name: " + newAssignee.getName())
+//log.debug("new assignee name: " + newAssignee.getName())
 
 def cloneIssueBean = ScriptRunnerImpl.scriptRunner.createBean(CloneIssue)
 
@@ -60,7 +60,6 @@ issue.summary = '${issue.getSummary()}'
     
 def linkTypeRelatesTo = CannedScriptUtils.getAllLinkTypesWithInwards(true).find { it.value == "relates to" }.key.toString()
 
-// Use ConditionUtils.FIELD_ADDITIONAL_SCRIPT to access the "Additional Code" field when calling clone issue from a script
 def inputs = [
     'FIELD_TARGET_PROJECT' : targetProject,
     'FIELD_LINK_TYPE' : linkTypeRelatesTo,
@@ -95,9 +94,10 @@ else {
     //retrieve the issue key of the clone
     def newIssueInfo = newIssueObj.toString().split(",")
     def unformattedKey = newIssueInfo[newIssueInfo.size()-1].substring(10)
-    newIssueKey = unformattedKey.subSequence(0, unformattedKey.length()-1)
+    newIssueKey = unformattedKey.subSequence(0, unformattedKey.length()-1).toString()
     log.debug(newIssueKey)
 
     //assign user to issue
-    def newIssue = issueManager.getIssueObject()
+    //def newIssue = issueManager.getIssueObject(newIssueKey)
+    //newIssue.setAssignee(newAssignee)
 }
