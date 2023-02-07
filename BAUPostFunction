@@ -13,49 +13,39 @@ import com.onresolve.scriptrunner.canned.jira.utils.AbstractCloneIssue
 import com.onresolve.scriptrunner.canned.jira.utils.CannedScriptUtils
 import groovy.xml.MarkupBuilder
 
+import com.onresolve.scriptrunner.canned.jira.admin.CopyProject
+
+import com.atlassian.jira.issue.link.LinkCollectionImpl
+import com.atlassian.jira.issue.link.IssueLink
+
+
 def log = Logger.getLogger(getClass())
 log.setLevel(Level.DEBUG)
 
+def issueManager = ComponentAccessor.getIssueManager()
+def linkManager = ComponentAccessor.getIssueLinkManager()
+def userManager = ComponentAccessor.getUserManager()
 def projectManager = ComponentAccessor.getProjectManager()
 def pluginAccessor = ComponentAccessor.getPluginAccessor()
 def projectPropertiesManager = ComponentAccessor.getOSGiComponentInstanceOfType(pluginAccessor
        .getClassLoader().findClass("com.tse.jira.projectproperties.plugin.api.ProjectPropertiesAOMgr"))
 
-// projectManager.getProjectObjects().each {project ->
-//     // log.warn("Processing project properties - "+ project.key)
 
-// 	//example to process for each project property
-// 	// projectPropertiesManager.getProjectPropertiesByProjectKey(project.key).each {property ->
-// 	// 	log.warn(property.getPropertyKey() +" >> "+ property.getPropertyValue())
-// 	// }
-
-// 	//example to process if project and property key exists
-// 	// def property = projectPropertiesManager.getProjectPropertyByKeys("TESTSUP", "bauProject")
-// 	// if(property != null) {
-// 	// 	log.warn("FOUND: "+ property.getPropertyKey() +" >> "+ property.getPropertyValue())
-// 	// }
-// }
-
-def bauProjectNew = ""
+//Read the target project and assignee from the current project's properties
+def targetProject = ""
+def newAssignee = ""
 projectPropertiesManager.getProjectPropertiesByProjectKey(issue.getProjectObject().getKey()).each {property ->
-	log.debug(property.getPropertyKey() +" >> "+ property.getPropertyValue())
 	if (property.getPropertyKey() == "bauProject") {
-		bauProjectNew = property.getPropertyValue()
+		targetProject = property.getPropertyValue()
 	}
+    if (property.getPropertyKey() == "defaultAssignee") {
+        debug.log(property.getPropertyValue())
+        newAssignee = userManager.getUserbyName(property.getPropertyValue())
+    }
 }
 
-log.debug("bau project value: " + bauProjectNew)
 
-def linkManager = ComponentAccessor.getIssueLinkManager()
-def userManager = ComponentAccessor.getUserManager()
-def issueManager = ComponentAccessor.getIssueManager()
-def customFieldManager = ComponentAccessor.getCustomFieldManager();
-def BAUProjectField = customFieldManager.getCustomFieldObjectByName("BAU Project")
-String targetProjectKey =  issue.getCustomFieldValue(BAUProjectField)
-log.debug("Value: " +targetProjectKey)
-
-def newAssignee = userManager.getUserByName("Nabeel.Ali")
-
+//def newAssignee = userManager.getUserByName("Nabeel.Ali")
 log.debug("new assignee name: " + newAssignee.getName())
 
 def cloneIssueBean = ScriptRunnerImpl.scriptRunner.createBean(CloneIssue)
@@ -66,17 +56,48 @@ def executionContext = [
 
 def additionalCode = """
 issue.summary = '${issue.getSummary()}'
-
-"""//issue.assignee = '${newAssignee}'
+"""
     
 def linkTypeRelatesTo = CannedScriptUtils.getAllLinkTypesWithInwards(true).find { it.value == "relates to" }.key.toString()
 
 // Use ConditionUtils.FIELD_ADDITIONAL_SCRIPT to access the "Additional Code" field when calling clone issue from a script
 def inputs = [
-    'FIELD_TARGET_PROJECT' : bauProjectNew,
+    'FIELD_TARGET_PROJECT' : targetProject,
     'FIELD_LINK_TYPE' : linkTypeRelatesTo,
     'FIELD_SELECTED_FIELDS': null, //clone all the fields
     (ConditionUtils.FIELD_ADDITIONAL_SCRIPT): [additionalCode, ""]
 ] as Map<String, Object>
 
-cloneIssueBean.execute(inputs, executionContext)
+def duplication = false 
+List<IssueLink> linkedIssues = linkManager.getOutwardLinks(issue.getId())
+linkedIssues.each{ linkedIssue -> 
+    
+    def currentIssue = linkedIssue.getDestinationObject()
+    log.debug(currentIssue.getKey())
+    def currentIssueProject = currentIssue.getProjectObject().getKey()
+    log.debug(currentIssueProject)
+    if (currentIssueProject == targetProject) {
+        duplication = true
+    }
+}
+
+def newIssueKey = ""
+
+// check for duplicate before cloning/linking
+if (duplication == true) {
+    inputs = inputs.minus(['FIELD_LINK_TYPE' : linkTypeRelatesTo])
+    log.debug("Issue duplication")
+}
+else {
+    //clone the issue
+    def newIssueObj = cloneIssueBean.execute(inputs, executionContext)
+
+    //retrieve the issue key of the clone
+    def newIssueInfo = newIssueObj.toString().split(",")
+    def unformattedKey = newIssueInfo[newIssueInfo.size()-1].substring(10)
+    newIssueKey = unformattedKey.subSequence(0, unformattedKey.length()-1)
+    log.debug(newIssueKey)
+
+    //assign user to issue
+    def newIssue = issueManager.getIssueObject()
+}
